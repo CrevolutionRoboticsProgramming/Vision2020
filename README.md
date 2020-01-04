@@ -4,7 +4,7 @@
 
 ## Overview
 
-This is a vision processing program created for the 2020 FRC game, Infinite Recharge. It can identify the game's vision target and send its horizontal offset to a connected roboRIO via UDP. Additionally, it is entirely configurable using the [VisionCommunicator](https://github.com/CrevolutionRoboticsProgramming/VisionCommunicator) JavaFX GUI.
+This is a vision processing program created for the 2020 FRC game, Infinite Recharge. It can identify the game's vision target and send its horizontal offset to a connected roboRIO via UDP. Additionally, it is entirely configurable using the [CrevoDashboard](https://github.com/CrevolutionRoboticsProgramming/CrevoDashboard) JavaFX GUI.
 
 ## Requirements
 
@@ -45,7 +45,7 @@ If you would like to run the program on startup, follow these steps:
 
 ## Usage
 
-Once ran, the program requires no user input. It includes a custom configuration protocol for storing and updating program-wide values like HSV thresholds and video formatting which can be accessed via our [VisionCommunicator](https://github.com/CrevolutionRoboticsProgramming/Vision-Communicator) JavaFX GUI.
+Once ran, the program requires no user input. It includes a custom configuration protocol for storing and updating program-wide values like HSV thresholds and video formatting which can be accessed via our [CrevoDashboard](https://github.com/CrevolutionRoboticsProgramming/CrevoDashboard) JavaFX GUI.
 
 Once the program identifies a vision target, it calculates its horizontal offset from the center of the target and streams it via UDP without labelling to the roboRIO. The stream can be received with the UDPHandler class included in [CrevoLib](https://github.com/CrevolutionRoboticsProgramming/RobotCode2020).
 
