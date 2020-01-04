@@ -218,8 +218,8 @@ private:
             /*
             if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count() - begin >= 1)
             {
-                begin = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
                 std::cout << "FPS: " << frameNumber - lastFpsFrame << '\n';
+                begin = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
                 lastFpsFrame = frameNumber;
             }
             */
@@ -284,7 +284,9 @@ private:
             switch (contours.size())
             {
             case 0:
-                communicatorUDPHandler->reply("SEARCHING");
+                // This sends the message every fifth frame. Sending status messages too fast generates some latency
+                if (frameNumber % 5 == 0)
+                    communicatorUDPHandler->reply("VISION-SEARCHING");
                 continue;
             case 1:
                 target = contours.at(0);
@@ -304,7 +306,9 @@ private:
 
             robotUDPHandler.sendTo(std::to_string((target.center.x - (processingFrame.cols / 2.0)) / processingFrame.cols), robotEndpoint);
 
-            communicatorUDPHandler->reply("LOCKED");
+            // This sends the message every fifth frame. Sending status messages too fast generates some latency
+            if (frameNumber % 5 == 0)
+                communicatorUDPHandler->reply("VISION-LOCKED");
 
             // Preps frame to be streamed
             if (streamProcessingVideo && systemConfig.tuning.value)
@@ -317,7 +321,7 @@ private:
             std::this_thread::sleep_for(std::chrono::milliseconds{10});
         }
 
-        communicatorUDPHandler->reply("DOWN");
+        communicatorUDPHandler->reply("VISION-DOWN");
 
         mjpegWriter.stop();
     }
