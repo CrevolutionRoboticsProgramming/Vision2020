@@ -1,15 +1,15 @@
 system:
   verbose: false
-  tuning: false
+  tuning: true
   videoPort: 1181
   robotPort: 1183
   receivePort: 1184
 vision:
   lowHue: 0
   lowSaturation: 0
-  lowValue: 214
+  lowValue: 132
   highHue: 255
-  highSaturation: 99
+  highSaturation: 142
   highValue: 255
   dilationPasses: 0
   minArea: 20

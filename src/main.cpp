@@ -20,6 +20,8 @@ VisionConfig visionConfig{};
 UvccamConfig uvccamConfig{};
 RaspicamConfig raspicamConfig{};
 
+UDPHandler *communicatorUDPHandler;
+
 template <typename T>
 T getYamlValue(YAML::Node yaml, std::string category, std::string setting)
 {
@@ -135,8 +137,35 @@ private:
         if (systemConfig.verbose.value)
             std::cout << "Configured Exposure\n";
 
+        // The Pi recognizes both cameras correctly more often when this command is issued
+        system("ls /dev/video*");
+
+        FILE *uname;
+        char consoleOutput[300];
+        int lastchar;
+
+        // Executes the command supplied to popen and saves the output in the char array
+        uname = popen("v4l2-ctl --list-devices", "r");
+        lastchar = fread(consoleOutput, 1, 300, uname);
+        consoleOutput[lastchar] = '\0';
+
+        // Converts the char array to an std::string
+        std::string outputString = consoleOutput;
+
+        /**
+	    * Working from the inside out:
+	    * 	- Finds where the camera's name is in the string
+	    * 	- Uses the location of the first character in that string as the starting point for a new search for the location of the first character in /dev/video
+	    * 	- Looks ten characters down the string to find the number that comes after /dev/video
+	    * 	- Parses the output character for an integer
+	    * 	- Assigns that integer to the appropriate variable
+	    */
+        int device = outputString.at(outputString.find("/dev/video", outputString.find("USB 2.0 Camera: HD USB Camera")) + 10) - '0';
+
+        pclose(uname);
+
         command = std::ostringstream{};
-        command << "cd ../mjpg-streamer-master/mjpg-streamer-experimental/ && ./mjpg_streamer -i 'input_uvc.so -r "
+        command << "cd ../mjpg-streamer-master/mjpg-streamer-experimental/ && ./mjpg_streamer -i 'input_uvc.so -d /dev/video" << device << " -r "
                 << uvccamConfig.width.value << "x" << uvccamConfig.height.value << " -e " << uvccamConfig.everyNthFrame.value
                 << "' -o 'output_http.so -p " << systemConfig.videoPort.value << "'";
         system(command.str().c_str());
@@ -186,14 +215,14 @@ private:
             if (processingFrame.empty())
                 continue;
 
-/*
+            /*
             if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count() - begin >= 1)
             {
                 begin = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
                 std::cout << "FPS: " << frameNumber - lastFpsFrame << '\n';
                 lastFpsFrame = frameNumber;
             }
-*/
+            */
 
             if (systemConfig.verbose.value && frameNumber % 10 == 0)
                 std::cout << "Grabbed Frame " + std::to_string(frameNumber) + '\n';
@@ -211,7 +240,9 @@ private:
 
             // Writes frame to be streamed when not tuning
             if (streamProcessingVideo && !systemConfig.tuning.value && frameNumber % 5 == 0)
+            {
                 mjpegWriter.write(processingFrame);
+            }
 
             // Extracts the contours
             std::vector<std::vector<cv::Point>> rawContours;
@@ -225,6 +256,7 @@ private:
             {
                 if (!streamFrame.empty())
                 {
+                    cv::resize(streamFrame, streamFrame, cv::Size{}, 0.5, 0.5);
                     // Writes the frame prepared last iteration
                     mjpegWriter.write(streamFrame);
                 }
@@ -252,6 +284,7 @@ private:
             switch (contours.size())
             {
             case 0:
+                communicatorUDPHandler->reply("SEARCHING");
                 continue;
             case 1:
                 target = contours.at(0);
@@ -269,9 +302,9 @@ private:
                 }
             }
 
-            double horizontalAngleError{-((processingFrame.cols / 2.0) - target.center.x) / processingFrame.cols * raspicamConfig.horizontalFov.value};
+            robotUDPHandler.sendTo(std::to_string((target.center.x - (processingFrame.cols / 2.0)) / processingFrame.cols), robotEndpoint);
 
-            robotUDPHandler.sendTo(std::to_string(horizontalAngleError), robotEndpoint);
+            communicatorUDPHandler->reply("LOCKED");
 
             // Preps frame to be streamed
             if (streamProcessingVideo && systemConfig.tuning.value)
@@ -279,12 +312,12 @@ private:
                 cv::rectangle(streamFrame, target.boundingBox, cv::Scalar{0, 255, 0}, 2);
                 cv::line(streamFrame, cv::Point{target.center.x, target.center.y - 10}, cv::Point{target.center.x, target.center.y + 10}, cv::Scalar{0, 255, 0}, 2);
                 cv::line(streamFrame, cv::Point{target.center.x - 10, target.center.y}, cv::Point{target.center.x + 10, target.center.y}, cv::Scalar{0, 255, 0}, 2);
-                cv::resize(streamFrame, streamFrame, cv::Size{}, 0.5, 0.5);
-                cv::putText(streamFrame, "Horizontal Angle of Error: " + std::to_string(horizontalAngleError), cv::Point{0, 12}, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar{255, 255, 255});
             }
 
             std::this_thread::sleep_for(std::chrono::milliseconds{10});
         }
+
+        communicatorUDPHandler->reply("DOWN");
 
         mjpegWriter.stop();
     }
@@ -294,108 +327,151 @@ int main()
 {
     parseConfigs(YAML::LoadFile(configDir));
 
+    UDPHandler tmp{systemConfig.receivePort.value};
+
+    communicatorUDPHandler = &tmp;
+
     streamThread.start();
     processVisionThread.start();
 
-    UDPHandler communicatorUDPHandler{systemConfig.receivePort.value};
-
-    while (true)
+    class : public UDPHandler::MessageReceiver
     {
-        if (communicatorUDPHandler.getMessage() != "")
+    public:
+        void run(std::string message) override
         {
-            std::string configsLabel{"CONFIGS:"};
+            parseConfigs(YAML::Load(message.c_str()));
 
-            // If we were sent configs
-            if (communicatorUDPHandler.getMessage().find(configsLabel) != std::string::npos)
+            // Puts the system on read-write mode
+            system("sudo mount -o remount,rw /");
+
+            // Writes the changes to file
+            remove(configDir.c_str());
+            std::ofstream file;
+            file.open(configDir);
+
+            if (!file.is_open())
+                std::cout << "Failed to open configuration file\n";
+
+            file << getCurrentConfig() << '\n';
+
+            file.close();
+
+            // Puts the system back on read-only
+            system("sudo mount -o remount,ro /");
+
+            if (systemConfig.verbose.value)
+                std::cout << "Updated Configurations\n";
+
+            if (!systemConfig.tuning.value)
             {
-                parseConfigs(YAML::Load(communicatorUDPHandler.getMessage().substr(configsLabel.length()).c_str()));
-
-                // Puts the system on read-write mode
-                system("sudo mount -o remount,rw /");
-
-                // Writes the changes to file
-                remove(configDir.c_str());
-                std::ofstream file;
-                file.open(configDir);
-
-                if (!file.is_open())
-                    std::cout << "Failed to open configuration file\n";
-
-                file << getCurrentConfig() << '\n';
-
-                file.close();
-
-                // Puts the system back on read-only
-                system("sudo mount -o remount,ro /");
-
-                if (systemConfig.verbose.value)
-                    std::cout << "Updated Configurations\n";
-
-                if (!systemConfig.tuning.value)
-                {
-                    streamThread.stop();
-                    processVisionThread.stop();
-
-                    while (streamThread.isRunning || processVisionThread.isRunning)
-                    {
-                        std::cout << "Waiting for streaming and vision processing streams to end...\n";
-                        std::this_thread::sleep_for(std::chrono::milliseconds{500});
-                    }
-
-                    if (!streamProcessingVideo)
-                        streamThread.start();
-
-                    processVisionThread.start();
-                }
-            }
-            else if (communicatorUDPHandler.getMessage() == "get config")
-            {
-                std::string configTag{"CONFIGS:\n"};
-
-                communicatorUDPHandler.reply(configTag + getCurrentConfig());
-
-                if (systemConfig.verbose.value)
-                    std::cout << "Sent Configurations\n";
-            }
-            else if (communicatorUDPHandler.getMessage() == "switch camera")
-            {
-                bool newStreamProcessingVideo = !streamProcessingVideo;
-
-                if (!newStreamProcessingVideo)
-                    streamThread.start();
-                else
-                    streamThread.stop();
-
-                streamProcessingVideo = newStreamProcessingVideo;
-
-                if (systemConfig.verbose.value)
-                    std::cout << "Switched Camera Stream\n";
-            }
-            else if (communicatorUDPHandler.getMessage() == "restart program")
-            {
-                if (systemConfig.verbose.value)
-                    std::cout << "Restarting program...\n";
-
                 streamThread.stop();
                 processVisionThread.stop();
-                break;
-            }
-            else if (communicatorUDPHandler.getMessage() == "reboot")
-            {
-                if (systemConfig.verbose.value)
-                    std::cout << "Rebooting...\n";
 
-                system("sudo reboot -h now");
-            }
-            else
-            {
-                std::cout << "Received unknown command via UDP: " + communicatorUDPHandler.getMessage() + '\n';
-            }
+                while (streamThread.isRunning || processVisionThread.isRunning)
+                {
+                    std::cout << "Waiting for streaming and vision processing streams to end...\n";
+                    std::this_thread::sleep_for(std::chrono::milliseconds{500});
+                }
 
-            communicatorUDPHandler.clearMessage();
+                if (!streamProcessingVideo)
+                    streamThread.start();
+
+                processVisionThread.start();
+            }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds{250});
-    }
+
+        std::string getLabel() override
+        {
+            return "CONFIGS:";
+        }
+    } configsReceiver;
+
+    class : public UDPHandler::MessageReceiver
+    {
+    public:
+        void run(std::string message) override
+        {
+            communicatorUDPHandler->reply("CONFIGS:" + getCurrentConfig());
+
+            if (systemConfig.verbose.value)
+                std::cout << "Sent Configurations\n";
+        }
+
+        std::string getLabel() override
+        {
+            return "get config";
+        }
+    } configsSender;
+
+    class : public UDPHandler::MessageReceiver
+    {
+    public:
+        void run(std::string message) override
+        {
+            bool newStreamProcessingVideo = !streamProcessingVideo;
+
+            if (!newStreamProcessingVideo)
+                streamThread.start();
+            else
+                streamThread.stop();
+
+            streamProcessingVideo = newStreamProcessingVideo;
+
+            if (systemConfig.verbose.value)
+                std::cout << "Switched Camera Stream\n";
+        }
+
+        std::string getLabel() override
+        {
+            return "switch camera";
+        }
+    } cameraSwitcher;
+
+    class : public UDPHandler::MessageReceiver
+    {
+    public:
+        void run(std::string message) override
+        {
+            if (systemConfig.verbose.value)
+                std::cout << "Restarting program...\n";
+
+            streamThread.stop();
+            processVisionThread.stop();
+
+            system("sudo pkill Vision2020");
+        }
+
+        std::string getLabel() override
+        {
+            return "restart program";
+        }
+    } programRestarter;
+
+    class : public UDPHandler::MessageReceiver
+    {
+    public:
+        void run(std::string message) override
+        {
+            if (systemConfig.verbose.value)
+                std::cout << "Rebooting...\n";
+
+            system("sudo reboot -h now");
+        }
+
+        std::string getLabel() override
+        {
+            return "reboot";
+        }
+    } systemRebooter;
+
+    communicatorUDPHandler->addReceiver(&configsReceiver);
+    communicatorUDPHandler->addReceiver(&configsSender);
+    communicatorUDPHandler->addReceiver(&cameraSwitcher);
+    communicatorUDPHandler->addReceiver(&programRestarter);
+    communicatorUDPHandler->addReceiver(&systemRebooter);
+
+    while (true)
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));
 
     return 0;
 }

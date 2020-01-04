@@ -47,7 +47,7 @@ If you would like to run the program on startup, follow these steps:
 
 Once ran, the program requires no user input. It includes a custom configuration protocol for storing and updating program-wide values like HSV thresholds and video formatting which can be accessed via our [CrevoDashboard](https://github.com/CrevolutionRoboticsProgramming/CrevoDashboard) JavaFX GUI.
 
-Once the program identifies a vision target, it calculates its horizontal offset from the center of the target and streams it via UDP without labelling to the roboRIO. The stream can be received with the UDPHandler class included in [CrevoLib](https://github.com/CrevolutionRoboticsProgramming/RobotCode2020).
+Once the program identifies a vision target, it calculates its horizontal offset from the center of the target, ranging from -1.0 to 1.0,  and streams it via UDP without labelling to the roboRIO. The stream can be received with the UDPHandler class included in [CrevoLib](https://github.com/CrevolutionRoboticsProgramming/RobotCode2020).
 
 The video stream can be received from [index.html](../master/index.html) in any web browser.
 

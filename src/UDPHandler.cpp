@@ -1,7 +1,9 @@
 #include "UDPHandler.hpp"
 
-UDPHandler::UDPHandler(int port) : mSocket{mIoService, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), port)}
+UDPHandler::UDPHandler(int port) : mSocket{mIoService, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), port)}, mReceivers{}
 {
+    mSocket.set_option(boost::asio::socket_base::reuse_address{true});
+
     startReceiving();
     start();
 }
@@ -56,6 +58,20 @@ void UDPHandler::handleReceive(const boost::system::error_code &error,
         mReceivedMessage = std::string{mReceiveBuffer.data()}.substr(0, bytesTransferred);
 
         reply("received");
+
+        bool receiverWasTriggered{false};
+
+        for (MessageReceiver *receiver : mReceivers)
+        {
+            if (receiver->getLabel().length() <= mReceivedMessage.length() && mReceivedMessage.substr(0, receiver->getLabel().length()) == receiver->getLabel())
+            {
+                receiver->run(mReceivedMessage.substr(receiver->getLabel().length(), mReceivedMessage.length()));
+                receiverWasTriggered = true;
+            }
+        }
+
+        if (!receiverWasTriggered)
+            std::cout << "Received unknown command via UDP: " + mReceivedMessage + '\n';
     }
     startReceiving();
 }
@@ -64,6 +80,11 @@ void UDPHandler::handleSend(boost::shared_ptr<std::string> /*message*/,
                             const boost::system::error_code & /*error*/,
                             std::size_t /*bytes_transferred*/)
 {
+}
+
+void UDPHandler::addReceiver(MessageReceiver *receiver)
+{
+    mReceivers.push_back(receiver);
 }
 
 std::string UDPHandler::getMessage()
