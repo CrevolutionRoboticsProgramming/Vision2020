@@ -304,11 +304,30 @@ private:
                 }
             }
 
+            double verticalFoV{45.0};
+            double heightOfTargetInches{15.0};
+
+            Point2f points[4];
+            target.rotatedBoundingBox.points(points);
+
+            // bottom-left minus top-left
+            double height{points[0].y - points[1].y};
+
+            // Total height of our view on the plane of the vision target is (total height in pixels / target height in pixels) * height of target in inches
+            double viewHeight{(processingFrame.rows / height) * heightOfTargetInches};
+
+            // Distance from target = View height / (2 * tan(vertical FoV / 2))
+            double distance{viewHeight / (2 * std::tan(verticalFoV / 2))};
+
             double horizontalOffset{(target.center.x - (processingFrame.cols / 2.0)) / processingFrame.cols};
             double verticalOffset{(target.center.y - (processingFrame.rows / 2.0)) / processingFrame.rows};
 
             robotUDPHandler.sendTo("X OFFSET:" + std::to_string(horizontalOffset), robotEndpoint);
             robotUDPHandler.sendTo("Y OFFSET:" + std::to_string(verticalOffset), robotEndpoint);
+
+            // We can't read something father than full field
+            if (distance < 648)
+                robotUDPHandler.sendTo("DISTANCE:" + std::to_string(distance), robotEndpoint);
 
             // This sends the message every fifth frame. Sending status messages too fast generates some latency
             if (frameNumber % 5 == 0)
