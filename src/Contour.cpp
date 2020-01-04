@@ -54,11 +54,17 @@ bool Contour::isValid(double minArea, double maxArea, double minContourToBoundin
 {
     // If the area of the contour is not within specification
     if (area < minArea || area > maxArea)
+    {
+        //std::cout << "Bad area: " << area << '\n';
         return false;
+    }
 
     // If the ratio of the contour's area to the area of its bounding box is not within specification
     if (area / boundingBox.area() < minContourToBoundingBoxRatio || area / boundingBox.area() > maxContourToBoundingBoxRatio)
+    {
+        //std::cout << "Bad ratio " << area / boundingBox.area() << '\n';
         return false;
+    }
 
     return true;
 }

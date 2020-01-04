@@ -99,6 +99,7 @@ class RaspicamConfig : public Config
 public:
     IntSetting width{"width"};
     IntSetting height{"height"};
+    IntSetting sensorMode{"sensorMode"};
     IntSetting fps{"fps"};
 
     // -100 to 100; default: 0
@@ -130,6 +131,7 @@ public:
     {
         settings.push_back(std::move(&width));
         settings.push_back(std::move(&height));
+        settings.push_back(std::move(&sensorMode));
         settings.push_back(std::move(&fps));
         settings.push_back(std::move(&sharpness));
         settings.push_back(std::move(&contrast));

@@ -2,6 +2,7 @@
 #include <string>
 #include <fstream>
 #include <functional>
+#include <chrono>
 #include <yaml-cpp/yaml.h>
 #include <opencv2/opencv.hpp>
 #include <boost/asio.hpp>
@@ -154,18 +155,21 @@ private:
         boost::asio::ip::udp::endpoint robotEndpoint{boost::asio::ip::address::from_string("10.28.51.2"), systemConfig.robotPort.value};
 
         std::ostringstream pipeline;
-        pipeline << "rpicamsrc sensor-mode=7 shutter-speed=" << raspicamConfig.shutterSpeed.value << " exposure-mode=" << raspicamConfig.exposureMode.value
+        pipeline << "rpicamsrc sensor-mode=" << raspicamConfig.sensorMode.value << " shutter-speed=" << raspicamConfig.shutterSpeed.value << " exposure-mode=" << raspicamConfig.exposureMode.value
                  << " awb-mode=" << raspicamConfig.whiteBalanceMode.value
                  << " sharpness=" << raspicamConfig.sharpness.value << " contrast=" << raspicamConfig.sharpness.value
                  << " brightness=" << raspicamConfig.brightness.value << " saturation=" << raspicamConfig.saturation.value
-                 << " ! video/x-raw,width=" << raspicamConfig.width.value << ",height=" << raspicamConfig.height.value << ",framerate="
-                 << raspicamConfig.fps.value << "/1 ! appsink";
+                 << " ! video/x-raw,width=" << raspicamConfig.width.value << ",height=" << raspicamConfig.height.value
+                 << ",framerate=" << raspicamConfig.fps.value << "/1 ! appsink";
 
         cv::VideoCapture processingCamera{pipeline.str(), cv::CAP_GSTREAMER};
         MJPEGWriter mjpegWriter{systemConfig.videoPort.value};
 
         if (systemConfig.verbose.value && !processingCamera.isOpened())
             std::cout << "Could not open processing camera!\n";
+
+        long int begin = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        int lastFpsFrame = 1;
 
         cv::Mat streamFrame;
         cv::Mat processingFrame;
@@ -182,6 +186,15 @@ private:
             if (processingFrame.empty())
                 continue;
 
+/*
+            if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count() - begin >= 1)
+            {
+                begin = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                std::cout << "FPS: " << frameNumber - lastFpsFrame << '\n';
+                lastFpsFrame = frameNumber;
+            }
+*/
+
             if (systemConfig.verbose.value && frameNumber % 10 == 0)
                 std::cout << "Grabbed Frame " + std::to_string(frameNumber) + '\n';
 
@@ -197,7 +210,7 @@ private:
                 mjpegWriter.stop();
 
             // Writes frame to be streamed when not tuning
-            if (streamProcessingVideo && !systemConfig.tuning.value)
+            if (streamProcessingVideo && !systemConfig.tuning.value && frameNumber % 5 == 0)
                 mjpegWriter.write(processingFrame);
 
             // Extracts the contours
@@ -266,6 +279,7 @@ private:
                 cv::rectangle(streamFrame, target.boundingBox, cv::Scalar{0, 255, 0}, 2);
                 cv::line(streamFrame, cv::Point{target.center.x, target.center.y - 10}, cv::Point{target.center.x, target.center.y + 10}, cv::Scalar{0, 255, 0}, 2);
                 cv::line(streamFrame, cv::Point{target.center.x - 10, target.center.y}, cv::Point{target.center.x + 10, target.center.y}, cv::Scalar{0, 255, 0}, 2);
+                cv::resize(streamFrame, streamFrame, cv::Size{}, 0.5, 0.5);
                 cv::putText(streamFrame, "Horizontal Angle of Error: " + std::to_string(horizontalAngleError), cv::Point{0, 12}, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar{255, 255, 255});
             }
 

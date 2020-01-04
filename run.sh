@@ -2,7 +2,9 @@
 
 while [ true ]
 do
+    sudo mount -o remount,rw /
     make
-    ./OffseasonVision2019
+    sudo mount -o remount,ro /
+    ./Vision2020
     sleep 5
 done
