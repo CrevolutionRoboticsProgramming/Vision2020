@@ -1,0 +1,38 @@
+system:
+  verbose: false
+  tuning: true
+  videoPort: 1181
+  robotPort: 1183
+  receivePort: 1184
+vision:
+  lowHue: 0
+  lowSaturation: 0
+  lowValue: 100
+  highHue: 180
+  highSaturation: 147
+  highValue: 255
+  dilationPasses: 1
+  minArea: 100
+  maxArea: 7500
+  minContourToBoundingBoxRatio: 0.12
+  maxContourToBoundingBoxRatio: 0.5
+  allowableError: 3
+uvccam:
+  width: 320
+  height: 240
+  everyNthFrame: 2
+  exposure: 0
+  exposureAuto: 3
+raspicam:
+  width: 320
+  height: 240
+  fps: 15
+  sharpness: 0
+  contrast: 0
+  brightness: 50
+  saturation: 0
+  shutterSpeed: 50000
+  whiteBalanceMode: 3
+  exposureMode: 0
+  exposureCompensation: 0
+  horizontalFov: 75
