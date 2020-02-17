@@ -304,7 +304,11 @@ private:
                 }
             }
 
-            robotUDPHandler.sendTo(std::to_string((target.center.x - (processingFrame.cols / 2.0)) / processingFrame.cols), robotEndpoint);
+            double horizontalOffset{(target.center.x - (processingFrame.cols / 2.0)) / processingFrame.cols};
+            double verticalOffset{(target.center.y - (processingFrame.rows / 2.0)) / processingFrame.rows};
+
+            robotUDPHandler.sendTo("X OFFSET:" + std::to_string(horizontalOffset), robotEndpoint);
+            robotUDPHandler.sendTo("Y OFFSET:" + std::to_string(verticalOffset), robotEndpoint);
 
             // This sends the message every fifth frame. Sending status messages too fast generates some latency
             if (frameNumber % 5 == 0)
@@ -354,7 +358,10 @@ int main()
             file.open(configDir);
 
             if (!file.is_open())
+            {
                 std::cout << "Failed to open configuration file\n";
+                return;
+            }
 
             file << getCurrentConfig() << '\n';
 
@@ -364,7 +371,7 @@ int main()
             system("sudo mount -o remount,ro /");
 
             if (systemConfig.verbose.value)
-                std::cout << "Updated Configurations\n";
+                std::cout << "Updated configurations\n";
 
             if (!systemConfig.tuning.value)
             {
