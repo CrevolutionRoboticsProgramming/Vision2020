@@ -47,7 +47,7 @@ Contour::Contour(std::vector<cv::Point> &pointsVector, int error)
     // Saves a bounding box for the contour
     boundingBox = cv::boundingRect(newPoly);
 
-    center = cv::Point2d{boundingBox.x + (boundingBox.width / 2), boundingBox.y + (boundingBox.height / 2)};
+    center = cv::Point2d{boundingBox.x + (boundingBox.width / 2.0), boundingBox.y + (boundingBox.height / 2.0)};
 }
 
 bool Contour::isValid(double minArea, double maxArea, double minContourToBoundingBoxRatio, double maxContourToBoundingBoxRatio)

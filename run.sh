@@ -3,7 +3,7 @@
 while [ true ]
 do
     sudo mount -o remount,rw /
-    make
+    make -j2
     sudo mount -o remount,ro /
     ./Vision2020
     sleep 5

@@ -7,10 +7,10 @@ system:
 vision:
   lowHue: 0
   lowSaturation: 0
-  lowValue: 132
-  highHue: 255
-  highSaturation: 142
-  highValue: 255
+  lowValue: 0
+  highHue: 157
+  highSaturation: 84
+  highValue: 117
   dilationPasses: 0
   minArea: 20
   maxArea: 7500

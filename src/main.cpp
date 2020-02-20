@@ -181,13 +181,14 @@ private:
         cv::Mat morphElement{cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3))};
 
         UDPHandler robotUDPHandler{9999};
-        boost::asio::ip::udp::endpoint robotEndpoint{boost::asio::ip::address::from_string("10.28.51.2"), systemConfig.robotPort.value};
+        boost::asio::ip::udp::endpoint robotEndpoint{boost::asio::ip::address::from_string("10.28.51.2"), static_cast<short unsigned int>(systemConfig.robotPort.value)};
 
         std::ostringstream pipeline;
-        pipeline << "rpicamsrc sensor-mode=" << raspicamConfig.sensorMode.value << " shutter-speed=" << raspicamConfig.shutterSpeed.value << " exposure-mode=" << raspicamConfig.exposureMode.value
-                 << " awb-mode=" << raspicamConfig.whiteBalanceMode.value
+        pipeline << "rpicamsrc sensor-mode=" << raspicamConfig.sensorMode.value << " shutter-speed=" << raspicamConfig.shutterSpeed.value
+                << " exposure-mode=" << raspicamConfig.exposureMode.value << " awb-mode=" << raspicamConfig.whiteBalanceMode.value
                  << " sharpness=" << raspicamConfig.sharpness.value << " contrast=" << raspicamConfig.sharpness.value
                  << " brightness=" << raspicamConfig.brightness.value << " saturation=" << raspicamConfig.saturation.value
+                 << " rotation=180"
                  << " ! video/x-raw,width=" << raspicamConfig.width.value << ",height=" << raspicamConfig.height.value
                  << ",framerate=" << raspicamConfig.fps.value << "/1 ! appsink";
 
@@ -197,7 +198,7 @@ private:
         if (systemConfig.verbose.value && !processingCamera.isOpened())
             std::cout << "Could not open processing camera!\n";
 
-        long int begin = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        long int lastFpsPrintSeconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         int lastFpsFrame = 1;
 
         cv::Mat streamFrame;
@@ -215,17 +216,13 @@ private:
             if (processingFrame.empty())
                 continue;
 
-            /*
-            if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count() - begin >= 1)
+            if (systemConfig.verbose.value
+                && std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - lastFpsPrintSeconds >= 1)
             {
                 std::cout << "FPS: " << frameNumber - lastFpsFrame << '\n';
-                begin = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                lastFpsPrintSeconds = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
                 lastFpsFrame = frameNumber;
             }
-            */
-
-            if (systemConfig.verbose.value && frameNumber % 10 == 0)
-                std::cout << "Grabbed Frame " + std::to_string(frameNumber) + '\n';
 
             if (streamProcessingVideo)
             {
@@ -248,7 +245,8 @@ private:
             std::vector<std::vector<cv::Point>> rawContours;
             std::vector<Contour> contours;
             cv::cvtColor(processingFrame, processingFrame, cv::COLOR_BGR2HSV);
-            cv::inRange(processingFrame, cv::Scalar{visionConfig.lowHue.value, visionConfig.lowSaturation.value, visionConfig.lowValue.value}, cv::Scalar{visionConfig.highHue.value, visionConfig.highSaturation.value, visionConfig.highValue.value}, processingFrame);
+            cv::inRange(processingFrame, cv::Scalar{visionConfig.lowHue.value, visionConfig.lowSaturation.value, visionConfig.lowValue.value},
+                        cv::Scalar{visionConfig.highHue.value, visionConfig.highSaturation.value, visionConfig.highValue.value}, processingFrame);
             cv::dilate(processingFrame, processingFrame, morphElement, cv::Point(-1, -1), visionConfig.dilationPasses.value);
 
             // Writes vision processing frame to be streamed if requested
@@ -267,7 +265,10 @@ private:
             }
 
             cv::Canny(processingFrame, processingFrame, 0, 0);
-            cv::findContours(processingFrame, rawContours, cv::noArray(), cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
+
+            // The program won't be able to properly identify the contours unless we make them a little bigger
+            cv::dilate(processingFrame, processingFrame, morphElement, cv::Point(-1, -1), 1);
+            cv::findContours(processingFrame, rawContours, cv::noArray(), cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
             for (std::vector<cv::Point> pointsVector : rawContours)
             {
@@ -304,11 +305,30 @@ private:
                 }
             }
 
+            double verticalFoV{45.0};
+            double heightOfTargetInches{15.0};
+
+            Point2f points[4];
+            target.rotatedBoundingBox.points(points);
+
+            // bottom-left minus top-left
+            double height{points[0].y - points[1].y};
+
+            // Total height of our view on the plane of the vision target is (total height in pixels / target height in pixels) * height of target in inches
+            double viewHeight{(processingFrame.rows / height) * heightOfTargetInches};
+
+            // Distance from target = View height / (2 * tan(vertical FoV / 2))
+            double distance{viewHeight / (2 * std::tan(verticalFoV / 2))};
+
             double horizontalOffset{(target.center.x - (processingFrame.cols / 2.0)) / processingFrame.cols};
             double verticalOffset{(target.center.y - (processingFrame.rows / 2.0)) / processingFrame.rows};
 
             robotUDPHandler.sendTo("X OFFSET:" + std::to_string(horizontalOffset), robotEndpoint);
             robotUDPHandler.sendTo("Y OFFSET:" + std::to_string(verticalOffset), robotEndpoint);
+
+            // We can't read something father than full field
+            if (distance < 648)
+                robotUDPHandler.sendTo("DISTANCE:" + std::to_string(distance), robotEndpoint);
 
             // This sends the message every fifth frame. Sending status messages too fast generates some latency
             if (frameNumber % 5 == 0)
@@ -318,11 +338,11 @@ private:
             if (streamProcessingVideo && systemConfig.tuning.value)
             {
                 cv::rectangle(streamFrame, target.boundingBox, cv::Scalar{0, 255, 0}, 2);
-                cv::line(streamFrame, cv::Point{target.center.x, target.center.y - 10}, cv::Point{target.center.x, target.center.y + 10}, cv::Scalar{0, 255, 0}, 2);
-                cv::line(streamFrame, cv::Point{target.center.x - 10, target.center.y}, cv::Point{target.center.x + 10, target.center.y}, cv::Scalar{0, 255, 0}, 2);
+                cv::line(streamFrame, cv::Point{static_cast<int>(target.center.x), static_cast<int>(target.center.y - 10)},
+                         cv::Point{static_cast<int>(target.center.x), static_cast<int>(target.center.y + 10)}, cv::Scalar{0, 255, 0}, 2);
+                cv::line(streamFrame, cv::Point{static_cast<int>(target.center.x - 10), static_cast<int>(target.center.y)},
+                         cv::Point{static_cast<int>(target.center.x + 10), static_cast<int>(target.center.y)}, cv::Scalar{0, 255, 0}, 2);
             }
-
-            std::this_thread::sleep_for(std::chrono::milliseconds{10});
         }
 
         communicatorUDPHandler->reply("VISION-DOWN");
