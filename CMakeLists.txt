@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 project( Vision2020 )
 
-set( BOOST_ROOT ~/boost_1_58_0 )
+set( BOOST_ROOT ~/boost_1_72_0 )
 
 set( OpenCV_DIR ~/opencv-3.4.2 )
 add_definitions( -std=c++17 )
@@ -23,5 +23,5 @@ file (GLOB Vision2020_SRC
 )
 
 add_executable( Vision2020 ${Vision2020_SRC} )
-target_link_libraries( Vision2020 /home/pi/yaml-cpp-master/build/libyaml-cpp.a /home/pi/libjpeg-turbo-2.0.4/build/libjpeg.a ${OpenCV_LIBS} ${Boost_LIBRARIES} ${GST_LIBRARIES} gstapp-1.0 gstriff-1.0 gstbase-1.0 gstvideo-1.0 gstpbutils-1.0 X11 pthread )
+target_link_libraries( Vision2020 /home/pi/yaml-cpp-master/build/libyaml-cpp.a ${OpenCV_LIBS} ${Boost_LIBRARIES} ${GST_LIBRARIES} gstapp-1.0 gstriff-1.0 gstbase-1.0 gstvideo-1.0 gstpbutils-1.0 X11 pthread )
 

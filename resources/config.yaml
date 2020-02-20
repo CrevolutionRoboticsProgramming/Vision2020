@@ -1,5 +1,5 @@
 system:
-  verbose: false
+  verbose: true
   tuning: true
   videoPort: 1181
   robotPort: 1183
@@ -7,13 +7,13 @@ system:
 vision:
   lowHue: 0
   lowSaturation: 0
-  lowValue: 132
+  lowValue: 234
   highHue: 255
-  highSaturation: 142
+  highSaturation: 81
   highValue: 255
   dilationPasses: 0
   minArea: 20
-  maxArea: 7500
+  maxArea: 10000000
   minContourToBoundingBoxRatio: 0
   maxContourToBoundingBoxRatio: 0.5
   allowableError: 3

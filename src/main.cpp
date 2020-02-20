@@ -181,13 +181,14 @@ private:
         cv::Mat morphElement{cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3))};
 
         UDPHandler robotUDPHandler{9999};
-        boost::asio::ip::udp::endpoint robotEndpoint{boost::asio::ip::address::from_string("10.28.51.2"), systemConfig.robotPort.value};
+        boost::asio::ip::udp::endpoint robotEndpoint{boost::asio::ip::address::from_string("10.28.51.2"), static_cast<short unsigned int>(systemConfig.robotPort.value)};
 
         std::ostringstream pipeline;
-        pipeline << "rpicamsrc sensor-mode=" << raspicamConfig.sensorMode.value << " shutter-speed=" << raspicamConfig.shutterSpeed.value << " exposure-mode=" << raspicamConfig.exposureMode.value
-                 << " awb-mode=" << raspicamConfig.whiteBalanceMode.value
+        pipeline << "rpicamsrc sensor-mode=" << raspicamConfig.sensorMode.value << " shutter-speed=" << raspicamConfig.shutterSpeed.value
+                << " exposure-mode=" << raspicamConfig.exposureMode.value << " awb-mode=" << raspicamConfig.whiteBalanceMode.value
                  << " sharpness=" << raspicamConfig.sharpness.value << " contrast=" << raspicamConfig.sharpness.value
                  << " brightness=" << raspicamConfig.brightness.value << " saturation=" << raspicamConfig.saturation.value
+                 << " rotation=180"
                  << " ! video/x-raw,width=" << raspicamConfig.width.value << ",height=" << raspicamConfig.height.value
                  << ",framerate=" << raspicamConfig.fps.value << "/1 ! appsink";
 
@@ -197,13 +198,16 @@ private:
         if (systemConfig.verbose.value && !processingCamera.isOpened())
             std::cout << "Could not open processing camera!\n";
 
-        long int begin = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        long int lastFpsPrintSeconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        int64_t debugBeginMillis = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        int64_t debugBeginLoopMillis;
         int lastFpsFrame = 1;
 
         cv::Mat streamFrame;
         cv::Mat processingFrame;
         for (int frameNumber{1}; !stopFlag; ++frameNumber)
         {
+            debugBeginLoopMillis = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
             if (!processingCamera.isOpened())
                 continue;
 
@@ -215,17 +219,16 @@ private:
             if (processingFrame.empty())
                 continue;
 
-            /*
-            if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count() - begin >= 1)
+            std::cout << "After grabbing: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()- debugBeginMillis << '\n';
+            debugBeginMillis = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+            if (systemConfig.verbose.value
+                && std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - lastFpsPrintSeconds >= 1)
             {
                 std::cout << "FPS: " << frameNumber - lastFpsFrame << '\n';
-                begin = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                lastFpsPrintSeconds = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
                 lastFpsFrame = frameNumber;
             }
-            */
-
-            if (systemConfig.verbose.value && frameNumber % 10 == 0)
-                std::cout << "Grabbed Frame " + std::to_string(frameNumber) + '\n';
 
             if (streamProcessingVideo)
             {
@@ -244,12 +247,27 @@ private:
                 mjpegWriter.write(processingFrame);
             }
 
+            std::cout << "After checking: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()- debugBeginMillis << '\n';
+            debugBeginMillis = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
             // Extracts the contours
             std::vector<std::vector<cv::Point>> rawContours;
             std::vector<Contour> contours;
             cv::cvtColor(processingFrame, processingFrame, cv::COLOR_BGR2HSV);
-            cv::inRange(processingFrame, cv::Scalar{visionConfig.lowHue.value, visionConfig.lowSaturation.value, visionConfig.lowValue.value}, cv::Scalar{visionConfig.highHue.value, visionConfig.highSaturation.value, visionConfig.highValue.value}, processingFrame);
+
+            std::cout << "After converting: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()- debugBeginMillis << '\n';
+            debugBeginMillis = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+            cv::inRange(processingFrame, cv::Scalar{visionConfig.lowHue.value, visionConfig.lowSaturation.value, visionConfig.lowValue.value},
+                        cv::Scalar{visionConfig.highHue.value, visionConfig.highSaturation.value, visionConfig.highValue.value}, processingFrame);
+
+            std::cout << "After thresholding: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()- debugBeginMillis << '\n';
+            debugBeginMillis = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            
             cv::dilate(processingFrame, processingFrame, morphElement, cv::Point(-1, -1), visionConfig.dilationPasses.value);
+
+            std::cout << "After dilating: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()- debugBeginMillis << '\n';
+            debugBeginMillis = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
             // Writes vision processing frame to be streamed if requested
             if (streamProcessingVideo && systemConfig.tuning.value)
@@ -266,8 +284,24 @@ private:
                 cv::cvtColor(streamFrame, streamFrame, cv::COLOR_GRAY2BGR);
             }
 
+            std::cout << "After checking again: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()- debugBeginMillis << '\n';
+            debugBeginMillis = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
             cv::Canny(processingFrame, processingFrame, 0, 0);
-            cv::findContours(processingFrame, rawContours, cv::noArray(), cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
+
+            std::cout << "After Canny: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()- debugBeginMillis << '\n';
+            debugBeginMillis = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+            // The program won't be able to properly identify the contours unless we make them a little bigger
+            cv::dilate(processingFrame, processingFrame, morphElement, cv::Point(-1, -1), 1);
+
+            std::cout << "After dilating again: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()- debugBeginMillis << '\n';
+            debugBeginMillis = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+            cv::findContours(processingFrame, rawContours, cv::noArray(), cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+
+            std::cout << "After finding contours: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()- debugBeginMillis << '\n';
+            debugBeginMillis = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
             for (std::vector<cv::Point> pointsVector : rawContours)
             {
@@ -278,6 +312,9 @@ private:
                     contours.push_back(newContour);
                 }
             }
+
+            std::cout << "After checking contour validity: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()- debugBeginMillis << '\n';
+            debugBeginMillis = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
             Contour target{};
 
@@ -329,16 +366,28 @@ private:
             if (distance < 648)
                 robotUDPHandler.sendTo("DISTANCE:" + std::to_string(distance), robotEndpoint);
 
+            //std::cout << "Distance: " << distance << '\n';
+
             // This sends the message every fifth frame. Sending status messages too fast generates some latency
             if (frameNumber % 5 == 0)
                 communicatorUDPHandler->reply("VISION-LOCKED");
+
+            std::cout << "After sending: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()- debugBeginMillis << '\n';
+            debugBeginMillis = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            
+            std::cout << "\nTotal: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - debugBeginLoopMillis << '\n';
+            std::cout << "\n\n";
+
+            std::this_thread::sleep_for(std::chrono::seconds{1});
 
             // Preps frame to be streamed
             if (streamProcessingVideo && systemConfig.tuning.value)
             {
                 cv::rectangle(streamFrame, target.boundingBox, cv::Scalar{0, 255, 0}, 2);
-                cv::line(streamFrame, cv::Point{target.center.x, target.center.y - 10}, cv::Point{target.center.x, target.center.y + 10}, cv::Scalar{0, 255, 0}, 2);
-                cv::line(streamFrame, cv::Point{target.center.x - 10, target.center.y}, cv::Point{target.center.x + 10, target.center.y}, cv::Scalar{0, 255, 0}, 2);
+                cv::line(streamFrame, cv::Point{static_cast<int>(target.center.x), static_cast<int>(target.center.y - 10)},
+                         cv::Point{static_cast<int>(target.center.x), static_cast<int>(target.center.y + 10)}, cv::Scalar{0, 255, 0}, 2);
+                cv::line(streamFrame, cv::Point{static_cast<int>(target.center.x - 10), static_cast<int>(target.center.y)},
+                         cv::Point{static_cast<int>(target.center.x + 10), static_cast<int>(target.center.y)}, cv::Scalar{0, 255, 0}, 2);
             }
 
             std::this_thread::sleep_for(std::chrono::milliseconds{10});

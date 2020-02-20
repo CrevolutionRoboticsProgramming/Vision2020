@@ -45,12 +45,12 @@ public:
 class VisionConfig : public Config
 {
 public:
-    IntSetting lowHue{"lowHue"};
-    IntSetting lowSaturation{"lowSaturation"};
-    IntSetting lowValue{"lowValue"};
-    IntSetting highHue{"highHue"};
-    IntSetting highSaturation{"highSaturation"};
-    IntSetting highValue{"highValue"};
+    DoubleSetting lowHue{"lowHue"};
+    DoubleSetting lowSaturation{"lowSaturation"};
+    DoubleSetting lowValue{"lowValue"};
+    DoubleSetting highHue{"highHue"};
+    DoubleSetting highSaturation{"highSaturation"};
+    DoubleSetting highValue{"highValue"};
     IntSetting dilationPasses{"dilationPasses"};
     IntSetting minArea{"minArea"};
     IntSetting maxArea{"maxArea"};
