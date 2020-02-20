@@ -188,7 +188,6 @@ private:
                 << " exposure-mode=" << raspicamConfig.exposureMode.value << " awb-mode=" << raspicamConfig.whiteBalanceMode.value
                  << " sharpness=" << raspicamConfig.sharpness.value << " contrast=" << raspicamConfig.sharpness.value
                  << " brightness=" << raspicamConfig.brightness.value << " saturation=" << raspicamConfig.saturation.value
-                 << " rotation=180"
                  << " ! video/x-raw,width=" << raspicamConfig.width.value << ",height=" << raspicamConfig.height.value
                  << ",framerate=" << raspicamConfig.fps.value << "/1 ! appsink";
 
