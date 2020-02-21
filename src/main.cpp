@@ -216,10 +216,10 @@ private:
                 continue;
 
             if (systemConfig.verbose.value
-                && std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - lastFpsPrintSeconds >= 1)
+                && std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count() - lastFpsPrintSeconds >= 1)
             {
                 std::cout << "FPS: " << frameNumber - lastFpsFrame << '\n';
-                lastFpsPrintSeconds = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                lastFpsPrintSeconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
                 lastFpsFrame = frameNumber;
             }
 
