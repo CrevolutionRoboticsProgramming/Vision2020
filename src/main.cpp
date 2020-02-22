@@ -165,9 +165,10 @@ private:
         pclose(uname);
 
         command = std::ostringstream{};
-        command << "cd ../mjpg-streamer-master/mjpg-streamer-experimental/ && ./mjpg_streamer -i 'input_uvc.so -d /dev/video" << device << " -r "
+        command << "export LD_LIBRARY_PATH=/home/pi/mjpg-streamer-master/mjpg-streamer-experimental/plugins"
+                << " && cd /home/pi/mjpg-streamer-master/mjpg-streamer-experimental/ && ./mjpg_streamer -i '/home/pi/mjpg-streamer-master/mjpg-streamer-experimental/plugins/input_uvc/input_uvc.so -d /dev/video" << device << " -r "
                 << uvccamConfig.width.value << "x" << uvccamConfig.height.value << " -e " << uvccamConfig.everyNthFrame.value
-                << "' -o 'output_http.so -p " << systemConfig.videoPort.value << "'";
+                << "' -o '/home/pi/mjpg-streamer-master/mjpg-streamer-experimental/plugins/output_http/output_http.so -p " << systemConfig.videoPort.value << "'";
         system(command.str().c_str());
     }
 } streamThread;
@@ -185,7 +186,7 @@ private:
 
         std::ostringstream pipeline;
         pipeline << "rpicamsrc sensor-mode=" << raspicamConfig.sensorMode.value << " shutter-speed=" << raspicamConfig.shutterSpeed.value
-                << " exposure-mode=" << raspicamConfig.exposureMode.value << " awb-mode=" << raspicamConfig.whiteBalanceMode.value
+                 << " exposure-mode=" << raspicamConfig.exposureMode.value << " awb-mode=" << raspicamConfig.whiteBalanceMode.value
                  << " sharpness=" << raspicamConfig.sharpness.value << " contrast=" << raspicamConfig.sharpness.value
                  << " brightness=" << raspicamConfig.brightness.value << " saturation=" << raspicamConfig.saturation.value
                  << " ! video/x-raw,width=" << raspicamConfig.width.value << ",height=" << raspicamConfig.height.value
@@ -215,8 +216,7 @@ private:
             if (processingFrame.empty())
                 continue;
 
-            if (systemConfig.verbose.value
-                && std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count() - lastFpsPrintSeconds >= 1)
+            if (systemConfig.verbose.value && std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count() - lastFpsPrintSeconds >= 1)
             {
                 std::cout << "FPS: " << frameNumber - lastFpsFrame << '\n';
                 lastFpsPrintSeconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -293,41 +293,25 @@ private:
                 break;
             default:
                 target = contours.at(0);
-                double leastDistance = std::numeric_limits<double>::max();
+                double leastDistance{std::numeric_limits<double>::max()};
 
                 for (Contour contour : contours)
                 {
-                    double distanceToCenter = std::sqrt(std::pow(contour.center.x - (processingFrame.cols / 2), 2) + std::pow(contour.center.y - (processingFrame.rows / 2), 2));
+                    double distanceToCenter{std::sqrt(std::pow(contour.rotatedBoundingBox.center.x - (processingFrame.cols / 2), 2) + std::pow(contour.center.y - (processingFrame.rows / 2), 2))};
 
                     if (distanceToCenter < leastDistance)
+                    {
                         target = contour;
+                        leastDistance = distanceToCenter;
+                    }
                 }
             }
-
-            double verticalFoV{45.0};
-            double heightOfTargetInches{15.0};
-
-            Point2f points[4];
-            target.rotatedBoundingBox.points(points);
-
-            // bottom-left minus top-left
-            double height{points[0].y - points[1].y};
-
-            // Total height of our view on the plane of the vision target is (total height in pixels / target height in pixels) * height of target in inches
-            double viewHeight{(processingFrame.rows / height) * heightOfTargetInches};
-
-            // Distance from target = View height / (2 * tan(vertical FoV / 2))
-            double distance{viewHeight / (2 * std::tan(verticalFoV / 2))};
 
             double horizontalOffset{(target.center.x - (processingFrame.cols / 2.0)) / processingFrame.cols};
             double verticalOffset{(target.center.y - (processingFrame.rows / 2.0)) / processingFrame.rows};
 
             robotUDPHandler.sendTo("X OFFSET:" + std::to_string(horizontalOffset), robotEndpoint);
             robotUDPHandler.sendTo("Y OFFSET:" + std::to_string(verticalOffset), robotEndpoint);
-
-            // We can't read something father than full field
-            if (distance < 648)
-                robotUDPHandler.sendTo("DISTANCE:" + std::to_string(distance), robotEndpoint);
 
             // This sends the message every fifth frame. Sending status messages too fast generates some latency
             if (frameNumber % 5 == 0)

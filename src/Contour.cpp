@@ -1,4 +1,3 @@
-#include <iostream>
 #include "Contour.hpp"
 
 Contour::Contour()
@@ -59,8 +58,30 @@ bool Contour::isValid(double minArea, double maxArea, double minContourToBoundin
         return false;
     }
 
+    cv::Point2f points[4];
+    rotatedBoundingBox.points(points);
+
+    // Always the smallest
+    double height{std::numeric_limits<double>::max()};
+
+    // Always the largest
+    double horizontal{std::numeric_limits<double>::min()};
+
+    for (int i{1}; i < 4; ++i)
+    {
+        double newDistance{std::sqrt(std::pow(points[0].x - points[i].x, 2) + std::pow(points[0].y - points[i].y, 2))};
+        if (newDistance < height)
+            height = newDistance;
+        else if (newDistance > horizontal)
+            horizontal = newDistance;
+    }
+
+    double width{std::sqrt(std::pow(horizontal, 2) - std::pow(height, 2))};
+
+    double rotatedBoundingBoxArea{width * height};
+
     // If the ratio of the contour's area to the area of its bounding box is not within specification
-    if (area / boundingBox.area() < minContourToBoundingBoxRatio || area / boundingBox.area() > maxContourToBoundingBoxRatio)
+    if (area / rotatedBoundingBoxArea < minContourToBoundingBoxRatio || area / rotatedBoundingBoxArea > maxContourToBoundingBoxRatio)
     {
         //std::cout << "Bad ratio " << area / boundingBox.area() << '\n';
         return false;

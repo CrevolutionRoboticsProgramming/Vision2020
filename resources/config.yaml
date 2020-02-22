@@ -1,5 +1,5 @@
 system:
-  verbose: true
+  verbose: false
   tuning: true
   videoPort: 1181
   robotPort: 1183
@@ -7,15 +7,15 @@ system:
 vision:
   lowHue: 0
   lowSaturation: 0
-  lowValue: 0
-  highHue: 157
-  highSaturation: 84
-  highValue: 117
+  lowValue: 241
+  highHue: 255
+  highSaturation: 73
+  highValue: 255
   dilationPasses: 0
   minArea: 20
-  maxArea: 10000000
-  minContourToBoundingBoxRatio: 0
-  maxContourToBoundingBoxRatio: 0.5
+  maxArea: 30000
+  minContourToBoundingBoxRatio: 0.17000000000000001
+  maxContourToBoundingBoxRatio: 0.23999999999999999
   allowableError: 3
 uvccam:
   width: 320
