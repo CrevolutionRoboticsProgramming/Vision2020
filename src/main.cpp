@@ -177,13 +177,120 @@ private:
 class : public Thread
 {
 private:
+    cv::Mat mMorphElement{cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3))};
+
+    UDPHandler mRobotUDPHandler{9999};
+    boost::asio::ip::udp::endpoint mRobotEndpoint{boost::asio::ip::address::from_string("10.28.51.2"), static_cast<short unsigned int>(systemConfig.robotPort.value)};
+
+    std::vector<std::thread> mThreads{};
+
+    MJPEGWriter mMjpegWriter;
+
+    void process(int frameNumber, cv::Mat processingFrame)
+    {
+        cv::Mat streamFrame;
+
+        // Writes frame to be streamed when not tuning
+        if (streamProcessingVideo && !systemConfig.tuning.value)
+            mMjpegWriter.write(processingFrame);
+
+        // Extracts the contours
+        std::vector<std::vector<cv::Point>> rawContours;
+        std::vector<Contour> contours;
+        cv::cvtColor(processingFrame, processingFrame, cv::COLOR_BGR2HSV);
+        cv::inRange(processingFrame, cv::Scalar{visionConfig.lowHue.value, visionConfig.lowSaturation.value, visionConfig.lowValue.value},
+                    cv::Scalar{visionConfig.highHue.value, visionConfig.highSaturation.value, visionConfig.highValue.value}, processingFrame);
+        cv::dilate(processingFrame, processingFrame, mMorphElement, cv::Point(-1, -1), visionConfig.dilationPasses.value);
+
+        if (streamProcessingVideo)
+        {
+            if (systemConfig.tuning.value)
+                processingFrame.copyTo(streamFrame);
+
+            if (!mMjpegWriter.isOpened())
+            {
+                mMjpegWriter.write(processingFrame);
+                mMjpegWriter.start();
+            }
+        }
+        else if (mMjpegWriter.isOpened())
+            mMjpegWriter.stop();
+
+        cv::Canny(processingFrame, processingFrame, 0, 0);
+
+        // The program won't be able to properly identify the contours unless we make them a little bigger
+        cv::dilate(processingFrame, processingFrame, mMorphElement, cv::Point(-1, -1), 1);
+        cv::findContours(processingFrame, rawContours, cv::noArray(), cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+
+        for (std::vector<cv::Point> pointsVector : rawContours)
+        {
+            Contour newContour{pointsVector, visionConfig.allowableError.value};
+
+            if (newContour.isValid(visionConfig.minArea.value, visionConfig.maxArea.value, visionConfig.minContourToBoundingBoxRatio.value, visionConfig.maxContourToBoundingBoxRatio.value))
+                contours.push_back(newContour);
+        }
+
+        Contour target{};
+
+        switch (contours.size())
+        {
+        case 0:
+            // This sends the message every fifth frame. Sending status messages too fast generates some latency
+            if (frameNumber % 5 == 0)
+                communicatorUDPHandler->reply("VISION-SEARCHING");
+
+            if (streamProcessingVideo && systemConfig.tuning.value && !streamFrame.empty())
+            {
+                cv::resize(streamFrame, streamFrame, cv::Size{}, 0.5, 0.5);
+                mMjpegWriter.write(streamFrame);
+            }
+            return;
+        case 1:
+            target = contours.at(0);
+            break;
+        default:
+            target = contours.at(0);
+            double leastDistance{std::numeric_limits<double>::max()};
+
+            for (Contour contour : contours)
+            {
+                double distanceToCenter{std::sqrt(std::pow(contour.rotatedBoundingBox.center.x - (processingFrame.cols / 2), 2) + std::pow(contour.center.y - (processingFrame.rows / 2), 2))};
+
+                if (distanceToCenter < leastDistance)
+                {
+                    target = contour;
+                    leastDistance = distanceToCenter;
+                }
+            }
+        }
+
+        double horizontalOffset{(target.center.x - (processingFrame.cols / 2.0)) / processingFrame.cols};
+        double verticalOffset{(target.center.y - (processingFrame.rows / 2.0)) / processingFrame.rows};
+
+        mRobotUDPHandler.sendTo("X OFFSET:" + std::to_string(horizontalOffset), mRobotEndpoint);
+        mRobotUDPHandler.sendTo("Y OFFSET:" + std::to_string(verticalOffset), mRobotEndpoint);
+
+        // This sends the message every fifth frame. Sending status messages too fast generates some latency
+        if (frameNumber % 5 == 0)
+            communicatorUDPHandler->reply("VISION-LOCKED");
+
+        // Preps frame to be streamed
+        if (streamProcessingVideo && systemConfig.tuning.value && !streamFrame.empty())
+        {
+            cv::cvtColor(streamFrame, streamFrame, cv::COLOR_GRAY2BGR);
+            cv::rectangle(streamFrame, target.boundingBox, cv::Scalar{0, 255, 0}, 2);
+            cv::line(streamFrame, cv::Point{static_cast<int>(target.center.x), static_cast<int>(target.center.y - 10)},
+                     cv::Point{static_cast<int>(target.center.x), static_cast<int>(target.center.y + 10)}, cv::Scalar{0, 255, 0}, 2);
+            cv::line(streamFrame, cv::Point{static_cast<int>(target.center.x - 10), static_cast<int>(target.center.y)},
+                     cv::Point{static_cast<int>(target.center.x + 10), static_cast<int>(target.center.y)}, cv::Scalar{0, 255, 0}, 2);
+            cv::resize(streamFrame, streamFrame, cv::Size{}, 0.5, 0.5);
+
+            mMjpegWriter.write(streamFrame);
+        }
+    }
+
     void run() override
     {
-        cv::Mat morphElement{cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3))};
-
-        UDPHandler robotUDPHandler{9999};
-        boost::asio::ip::udp::endpoint robotEndpoint{boost::asio::ip::address::from_string("10.28.51.2"), static_cast<short unsigned int>(systemConfig.robotPort.value)};
-
         std::ostringstream pipeline;
         pipeline << "rpicamsrc sensor-mode=" << raspicamConfig.sensorMode.value << " shutter-speed=" << raspicamConfig.shutterSpeed.value
                  << " exposure-mode=" << raspicamConfig.exposureMode.value << " awb-mode=" << raspicamConfig.whiteBalanceMode.value
@@ -193,18 +300,18 @@ private:
                  << ",framerate=" << raspicamConfig.fps.value << "/1 ! appsink";
 
         cv::VideoCapture processingCamera{pipeline.str(), cv::CAP_GSTREAMER};
-        MJPEGWriter mjpegWriter{systemConfig.videoPort.value};
+        mMjpegWriter = MJPEGWriter{systemConfig.videoPort.value};
 
         if (systemConfig.verbose.value && !processingCamera.isOpened())
             std::cout << "Could not open processing camera!\n";
 
-        long int lastFpsPrintSeconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        int lastFpsFrame = 1;
+        long int lastFpsPrintSeconds{std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count()};
+        int lastFpsFrame{1};
 
-        cv::Mat streamFrame;
-        cv::Mat processingFrame;
         for (int frameNumber{1}; !stopFlag; ++frameNumber)
         {
+            cv::Mat processingFrame;
+
             if (!processingCamera.isOpened())
                 continue;
 
@@ -223,114 +330,18 @@ private:
                 lastFpsFrame = frameNumber;
             }
 
-            if (streamProcessingVideo)
+            mThreads.push_back(std::thread{[=] { process(frameNumber, processingFrame); }});
+
+            while (mThreads.size() > 180)
             {
-                if (!mjpegWriter.isOpened())
-                {
-                    mjpegWriter.write(processingFrame);
-                    mjpegWriter.start();
-                }
-            }
-            else if (mjpegWriter.isOpened())
-                mjpegWriter.stop();
-
-            // Writes frame to be streamed when not tuning
-            if (streamProcessingVideo && !systemConfig.tuning.value && frameNumber % 5 == 0)
-            {
-                mjpegWriter.write(processingFrame);
-            }
-
-            // Extracts the contours
-            std::vector<std::vector<cv::Point>> rawContours;
-            std::vector<Contour> contours;
-            cv::cvtColor(processingFrame, processingFrame, cv::COLOR_BGR2HSV);
-            cv::inRange(processingFrame, cv::Scalar{visionConfig.lowHue.value, visionConfig.lowSaturation.value, visionConfig.lowValue.value},
-                        cv::Scalar{visionConfig.highHue.value, visionConfig.highSaturation.value, visionConfig.highValue.value}, processingFrame);
-            cv::dilate(processingFrame, processingFrame, morphElement, cv::Point(-1, -1), visionConfig.dilationPasses.value);
-
-            // Writes vision processing frame to be streamed if requested
-            if (streamProcessingVideo && systemConfig.tuning.value)
-            {
-                if (!streamFrame.empty())
-                {
-                    cv::resize(streamFrame, streamFrame, cv::Size{}, 0.5, 0.5);
-                    // Writes the frame prepared last iteration
-                    mjpegWriter.write(streamFrame);
-                }
-
-                // Begins preparing the new frame
-                processingFrame.copyTo(streamFrame);
-                cv::cvtColor(streamFrame, streamFrame, cv::COLOR_GRAY2BGR);
-            }
-
-            cv::Canny(processingFrame, processingFrame, 0, 0);
-
-            // The program won't be able to properly identify the contours unless we make them a little bigger
-            cv::dilate(processingFrame, processingFrame, morphElement, cv::Point(-1, -1), 1);
-            cv::findContours(processingFrame, rawContours, cv::noArray(), cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-
-            for (std::vector<cv::Point> pointsVector : rawContours)
-            {
-                Contour newContour{pointsVector, visionConfig.allowableError.value};
-
-                if (newContour.isValid(visionConfig.minArea.value, visionConfig.maxArea.value, visionConfig.minContourToBoundingBoxRatio.value, visionConfig.maxContourToBoundingBoxRatio.value))
-                {
-                    contours.push_back(newContour);
-                }
-            }
-
-            Contour target{};
-
-            switch (contours.size())
-            {
-            case 0:
-                // This sends the message every fifth frame. Sending status messages too fast generates some latency
-                if (frameNumber % 5 == 0)
-                    communicatorUDPHandler->reply("VISION-SEARCHING");
-                continue;
-            case 1:
-                target = contours.at(0);
-                break;
-            default:
-                target = contours.at(0);
-                double leastDistance{std::numeric_limits<double>::max()};
-
-                for (Contour contour : contours)
-                {
-                    double distanceToCenter{std::sqrt(std::pow(contour.rotatedBoundingBox.center.x - (processingFrame.cols / 2), 2) + std::pow(contour.center.y - (processingFrame.rows / 2), 2))};
-
-                    if (distanceToCenter < leastDistance)
-                    {
-                        target = contour;
-                        leastDistance = distanceToCenter;
-                    }
-                }
-            }
-
-            double horizontalOffset{(target.center.x - (processingFrame.cols / 2.0)) / processingFrame.cols};
-            double verticalOffset{(target.center.y - (processingFrame.rows / 2.0)) / processingFrame.rows};
-
-            robotUDPHandler.sendTo("X OFFSET:" + std::to_string(horizontalOffset), robotEndpoint);
-            robotUDPHandler.sendTo("Y OFFSET:" + std::to_string(verticalOffset), robotEndpoint);
-
-            // This sends the message every fifth frame. Sending status messages too fast generates some latency
-            if (frameNumber % 5 == 0)
-                communicatorUDPHandler->reply("VISION-LOCKED");
-
-            // Preps frame to be streamed
-            if (streamProcessingVideo && systemConfig.tuning.value)
-            {
-                cv::rectangle(streamFrame, target.boundingBox, cv::Scalar{0, 255, 0}, 2);
-                cv::line(streamFrame, cv::Point{static_cast<int>(target.center.x), static_cast<int>(target.center.y - 10)},
-                         cv::Point{static_cast<int>(target.center.x), static_cast<int>(target.center.y + 10)}, cv::Scalar{0, 255, 0}, 2);
-                cv::line(streamFrame, cv::Point{static_cast<int>(target.center.x - 10), static_cast<int>(target.center.y)},
-                         cv::Point{static_cast<int>(target.center.x + 10), static_cast<int>(target.center.y)}, cv::Scalar{0, 255, 0}, 2);
+                mThreads.at(0).join();
+                mThreads.erase(mThreads.begin());
             }
         }
 
         communicatorUDPHandler->reply("VISION-DOWN");
 
-        mjpegWriter.stop();
+        mMjpegWriter.stop();
     }
 } processVisionThread;
 
