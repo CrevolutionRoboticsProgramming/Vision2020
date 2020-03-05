@@ -167,7 +167,7 @@ private:
         command = std::ostringstream{};
         command << "export LD_LIBRARY_PATH=/home/pi/mjpg-streamer-master/mjpg-streamer-experimental/plugins"
                 << " && cd /home/pi/mjpg-streamer-master/mjpg-streamer-experimental/ && ./mjpg_streamer -i '/home/pi/mjpg-streamer-master/mjpg-streamer-experimental/plugins/input_uvc/input_uvc.so -d /dev/video" << device << " -r "
-                << uvccamConfig.width.value << "x" << uvccamConfig.height.value << " -e " << uvccamConfig.everyNthFrame.value
+                << uvccamConfig.width.value << "x" << uvccamConfig.height.value << " -e " << uvccamConfig.dropEveryNthFrame.value
                 << "' -o '/home/pi/mjpg-streamer-master/mjpg-streamer-experimental/plugins/output_http/output_http.so -p " << systemConfig.videoPort.value << "'";
         system(command.str().c_str());
     }
@@ -216,10 +216,10 @@ private:
         else if (mMjpegWriter.isOpened())
             mMjpegWriter.stop();
 
-        cv::Canny(processingFrame, processingFrame, 0, 0);
+        //cv::Canny(processingFrame, processingFrame, 0, 0);
 
         // The program won't be able to properly identify the contours unless we make them a little bigger
-        cv::dilate(processingFrame, processingFrame, mMorphElement, cv::Point(-1, -1), 1);
+        //cv::dilate(processingFrame, processingFrame, mMorphElement, cv::Point(-1, -1), 1);
         cv::findContours(processingFrame, rawContours, cv::noArray(), cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
         for (std::vector<cv::Point> pointsVector : rawContours)
@@ -241,7 +241,7 @@ private:
 
             if (streamProcessingVideo && systemConfig.tuning.value && !streamFrame.empty())
             {
-                cv::resize(streamFrame, streamFrame, cv::Size{}, 0.5, 0.5);
+                //cv::resize(streamFrame, streamFrame, cv::Size{}, 0.5, 0.5);
                 mMjpegWriter.write(streamFrame);
             }
             return;
@@ -268,7 +268,7 @@ private:
         double verticalOffset{(target.center.y - (processingFrame.rows / 2.0)) / processingFrame.rows};
 
         mRobotUDPHandler.sendTo("X OFFSET:" + std::to_string(horizontalOffset), mRobotEndpoint);
-        mRobotUDPHandler.sendTo("Y OFFSET:" + std::to_string(verticalOffset), mRobotEndpoint);
+        mRobotUDPHandler.sendTo("Y OFFSET:" + std::to_string(-verticalOffset), mRobotEndpoint);
 
         // This sends the message every fifth frame. Sending status messages too fast generates some latency
         if (frameNumber % 5 == 0)
@@ -297,7 +297,7 @@ private:
                  << " sharpness=" << raspicamConfig.sharpness.value << " contrast=" << raspicamConfig.sharpness.value
                  << " brightness=" << raspicamConfig.brightness.value << " saturation=" << raspicamConfig.saturation.value
                  << " ! video/x-raw,width=" << raspicamConfig.width.value << ",height=" << raspicamConfig.height.value
-                 << ",framerate=" << raspicamConfig.fps.value << "/1 ! appsink";
+                 << ",framerate=" << raspicamConfig.maxFps.value << "/1 ! appsink";
 
         cv::VideoCapture processingCamera{pipeline.str(), cv::CAP_GSTREAMER};
         mMjpegWriter = MJPEGWriter{systemConfig.videoPort.value};

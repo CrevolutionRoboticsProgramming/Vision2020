@@ -80,7 +80,7 @@ class UvccamConfig : public Config
 public:
     IntSetting width{"width"};
     IntSetting height{"height"};
-    IntSetting everyNthFrame{"everyNthFrame"};
+    IntSetting dropEveryNthFrame{"dropEveryNthFrame"};
     IntSetting exposure{"exposure"};
     IntSetting exposureAuto{"exposureAuto"};
 
@@ -88,7 +88,7 @@ public:
     {
         settings.push_back(std::move(&width));
         settings.push_back(std::move(&height));
-        settings.push_back(std::move(&everyNthFrame));
+        settings.push_back(std::move(&dropEveryNthFrame));
         settings.push_back(std::move(&exposure));
         settings.push_back(std::move(&exposureAuto));
     }
@@ -100,7 +100,7 @@ public:
     IntSetting width{"width"};
     IntSetting height{"height"};
     IntSetting sensorMode{"sensorMode"};
-    IntSetting fps{"fps"};
+    IntSetting maxFps{"maxFps"};
 
     // -100 to 100; default: 0
     IntSetting sharpness{"sharpness"};
@@ -125,14 +125,13 @@ public:
 
     // -10 to 10
     IntSetting exposureCompensation{"exposureCompensation"};
-    IntSetting horizontalFov{"horizontalFov"};
 
     RaspicamConfig() : Config("raspicam")
     {
         settings.push_back(std::move(&width));
         settings.push_back(std::move(&height));
         settings.push_back(std::move(&sensorMode));
-        settings.push_back(std::move(&fps));
+        settings.push_back(std::move(&maxFps));
         settings.push_back(std::move(&sharpness));
         settings.push_back(std::move(&contrast));
         settings.push_back(std::move(&brightness));
@@ -141,6 +140,5 @@ public:
         settings.push_back(std::move(&whiteBalanceMode));
         settings.push_back(std::move(&exposureMode));
         settings.push_back(std::move(&exposureCompensation));
-        settings.push_back(std::move(&horizontalFov));
     }
 };
