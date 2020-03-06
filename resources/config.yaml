@@ -1,33 +1,33 @@
 system:
-  verbose: false
+  verbose: true
   tuning: true
   videoPort: 1181
   robotPort: 1183
   receivePort: 1184
 vision:
-  lowHue: 0
-  lowSaturation: 0
-  lowValue: 99
-  highHue: 255
-  highSaturation: 73
+  lowHue: 58
+  lowSaturation: 6
+  lowValue: 41
+  highHue: 176
+  highSaturation: 127
   highValue: 255
-  dilationPasses: 1
+  dilationPasses: 0
   minArea: 20
   maxArea: 30000
   minContourToBoundingBoxRatio: 0.17000000000000001
-  maxContourToBoundingBoxRatio: 0.45000000000000001
+  maxContourToBoundingBoxRatio: 0.65000000000000002
   allowableError: 3
 uvccam:
   width: 320
   height: 240
-  dropEveryNthFrame: 0
+  dropEveryNthFrame: 2
   exposure: 0
   exposureAuto: 3
 raspicam:
-  width: 320
-  height: 240
+  width: 640
+  height: 480
   sensorMode: 7
-  maxFps: 0
+  maxFps: 90
   sharpness: 0
   contrast: 0
   brightness: 50

@@ -300,6 +300,13 @@ private:
                  << ",framerate=" << raspicamConfig.maxFps.value << "/1 ! appsink";
 
         cv::VideoCapture processingCamera{pipeline.str(), cv::CAP_GSTREAMER};
+
+	if (!processingCamera.isOpened())
+	{
+            std::cout << "Could not open processing camera!\n";
+            return;
+	}
+
         mMjpegWriter = MJPEGWriter{systemConfig.videoPort.value};
 
         if (systemConfig.verbose.value && !processingCamera.isOpened())
@@ -311,9 +318,6 @@ private:
         for (int frameNumber{1}; !stopFlag; ++frameNumber)
         {
             cv::Mat processingFrame;
-
-            if (!processingCamera.isOpened())
-                continue;
 
             if (processingCamera.grab())
                 processingCamera.read(processingFrame);
