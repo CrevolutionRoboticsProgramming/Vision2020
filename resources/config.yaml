@@ -5,12 +5,12 @@ system:
   robotPort: 1183
   receivePort: 1184
 vision:
-  lowHue: 58
-  lowSaturation: 6
-  lowValue: 41
-  highHue: 176
-  highSaturation: 127
-  highValue: 255
+  lowHue: 115
+  lowSaturation: 25
+  lowValue: 22
+  highHue: 177
+  highSaturation: 135
+  highValue: 101
   dilationPasses: 0
   minArea: 20
   maxArea: 30000
@@ -20,7 +20,7 @@ vision:
 uvccam:
   width: 320
   height: 240
-  dropEveryNthFrame: 2
+  fps: 7
   exposure: 0
   exposureAuto: 3
 raspicam:

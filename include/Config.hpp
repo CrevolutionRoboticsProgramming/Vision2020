@@ -80,7 +80,7 @@ class UvccamConfig : public Config
 public:
     IntSetting width{"width"};
     IntSetting height{"height"};
-    IntSetting dropEveryNthFrame{"dropEveryNthFrame"};
+    IntSetting fps{"fps"};
     IntSetting exposure{"exposure"};
     IntSetting exposureAuto{"exposureAuto"};
 
@@ -88,7 +88,7 @@ public:
     {
         settings.push_back(std::move(&width));
         settings.push_back(std::move(&height));
-        settings.push_back(std::move(&dropEveryNthFrame));
+        settings.push_back(std::move(&fps));
         settings.push_back(std::move(&exposure));
         settings.push_back(std::move(&exposureAuto));
     }

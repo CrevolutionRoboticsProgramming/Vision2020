@@ -167,7 +167,7 @@ private:
         command = std::ostringstream{};
         command << "export LD_LIBRARY_PATH=/home/pi/mjpg-streamer-master/mjpg-streamer-experimental/plugins"
                 << " && cd /home/pi/mjpg-streamer-master/mjpg-streamer-experimental/ && ./mjpg_streamer -i '/home/pi/mjpg-streamer-master/mjpg-streamer-experimental/plugins/input_uvc/input_uvc.so -d /dev/video" << device << " -r "
-                << uvccamConfig.width.value << "x" << uvccamConfig.height.value << " -e " << uvccamConfig.dropEveryNthFrame.value
+                << uvccamConfig.width.value << "x" << uvccamConfig.height.value << " -softfps " << uvccamConfig.fps.value
                 << "' -o '/home/pi/mjpg-streamer-master/mjpg-streamer-experimental/plugins/output_http/output_http.so -p " << systemConfig.videoPort.value << "'";
         system(command.str().c_str());
     }
@@ -180,7 +180,7 @@ private:
     cv::Mat mMorphElement{cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3))};
 
     UDPHandler mRobotUDPHandler{9999};
-    boost::asio::ip::udp::endpoint mRobotEndpoint{boost::asio::ip::address::from_string("10.28.51.2"), static_cast<short unsigned int>(systemConfig.robotPort.value)};
+    boost::asio::ip::udp::endpoint mRobotEndpoint;
 
     std::vector<std::thread> mThreads{};
 
@@ -189,6 +189,8 @@ private:
     void process(int frameNumber, cv::Mat processingFrame)
     {
         cv::Mat streamFrame;
+
+        //cv::rectangle(processingFrame, cv::Point{0, 10}, cv::Point{33, 50}, cv::Scalar{255, 255, 255}, cv::FILLED);
 
         // Writes frame to be streamed when not tuning
         if (streamProcessingVideo && !systemConfig.tuning.value)
@@ -236,12 +238,13 @@ private:
         {
         case 0:
             // This sends the message every fifth frame. Sending status messages too fast generates some latency
-            if (frameNumber % 5 == 0)
+            if (frameNumber % 10 == 0)
                 communicatorUDPHandler->reply("VISION-SEARCHING");
 
             if (streamProcessingVideo && systemConfig.tuning.value && !streamFrame.empty())
             {
-                //cv::resize(streamFrame, streamFrame, cv::Size{}, 0.5, 0.5);
+                double ratio{static_cast<double>(raspicamConfig.width.value / uvccamConfig.width.value)};
+                cv::resize(streamFrame, streamFrame, cv::Size{}, ratio, ratio);
                 mMjpegWriter.write(streamFrame);
             }
             return;
@@ -271,7 +274,7 @@ private:
         mRobotUDPHandler.sendTo("Y OFFSET:" + std::to_string(-verticalOffset), mRobotEndpoint);
 
         // This sends the message every fifth frame. Sending status messages too fast generates some latency
-        if (frameNumber % 5 == 0)
+        if (frameNumber % 10 == 0)
             communicatorUDPHandler->reply("VISION-LOCKED");
 
         // Preps frame to be streamed
@@ -283,7 +286,9 @@ private:
                      cv::Point{static_cast<int>(target.center.x), static_cast<int>(target.center.y + 10)}, cv::Scalar{0, 255, 0}, 2);
             cv::line(streamFrame, cv::Point{static_cast<int>(target.center.x - 10), static_cast<int>(target.center.y)},
                      cv::Point{static_cast<int>(target.center.x + 10), static_cast<int>(target.center.y)}, cv::Scalar{0, 255, 0}, 2);
-            cv::resize(streamFrame, streamFrame, cv::Size{}, 0.5, 0.5);
+
+            double ratio{static_cast<double>(raspicamConfig.width.value / uvccamConfig.width.value)};
+            cv::resize(streamFrame, streamFrame, cv::Size{}, ratio, ratio);
 
             mMjpegWriter.write(streamFrame);
         }
@@ -292,7 +297,8 @@ private:
     void run() override
     {
         std::ostringstream pipeline;
-        pipeline << "rpicamsrc sensor-mode=" << raspicamConfig.sensorMode.value << " shutter-speed=" << raspicamConfig.shutterSpeed.value
+
+        pipeline << "rpicamsrc rotation=180 sensor-mode=" << raspicamConfig.sensorMode.value << " shutter-speed=" << raspicamConfig.shutterSpeed.value
                  << " exposure-mode=" << raspicamConfig.exposureMode.value << " awb-mode=" << raspicamConfig.whiteBalanceMode.value
                  << " sharpness=" << raspicamConfig.sharpness.value << " contrast=" << raspicamConfig.sharpness.value
                  << " brightness=" << raspicamConfig.brightness.value << " saturation=" << raspicamConfig.saturation.value
@@ -301,18 +307,17 @@ private:
 
         cv::VideoCapture processingCamera{pipeline.str(), cv::CAP_GSTREAMER};
 
-	if (!processingCamera.isOpened())
-	{
-            std::cout << "Could not open processing camera!\n";
-            return;
-	}
-
         mMjpegWriter = MJPEGWriter{systemConfig.videoPort.value};
 
         if (systemConfig.verbose.value && !processingCamera.isOpened())
+        {
             std::cout << "Could not open processing camera!\n";
+            return;
+        }
 
-        long int lastFpsPrintSeconds{std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count()};
+        mRobotEndpoint = boost::asio::ip::udp::endpoint{boost::asio::ip::address::from_string("10.28.51.2"), static_cast<short unsigned int>(systemConfig.robotPort.value)};
+
+        long long int lastFpsPrintSeconds{std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count()};
         int lastFpsFrame{1};
 
         for (int frameNumber{1}; !stopFlag; ++frameNumber)
@@ -367,9 +372,6 @@ int main()
         {
             parseConfigs(YAML::Load(message.c_str()));
 
-            // Puts the system on read-write mode
-            system("sudo mount -o remount,rw /");
-
             // Writes the changes to file
             remove(configDir.c_str());
             std::ofstream file;
@@ -384,9 +386,6 @@ int main()
             file << getCurrentConfig() << '\n';
 
             file.close();
-
-            // Puts the system back on read-only
-            system("sudo mount -o remount,ro /");
 
             if (systemConfig.verbose.value)
                 std::cout << "Updated configurations\n";
